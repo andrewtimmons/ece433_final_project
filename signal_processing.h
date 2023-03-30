@@ -15,8 +15,8 @@
 static double PI = atan2(1, 1) * 4;
 typedef double complex cplx;
 
-/* 
- * 
+/*
+ *
  */
 void _fft(cplx buf[], cplx out[], int n, int step) {
 	if (step < n) {
@@ -32,7 +32,7 @@ void _fft(cplx buf[], cplx out[], int n, int step) {
 }
 
 /*
- * 
+ *
  */
 void fft(cplx buf[], int n) {
 	cplx out[n];
@@ -48,12 +48,12 @@ void fft(cplx buf[], int n) {
 int hps(cplx fft[], int num_harmonics) {
 	// get length of fft array
 	int ft_len = sizeof(fft)/sizeof(fft[0]);
-	
+
 	// scaler value for downscaling fft values
 	float ft_scaler = 0.001;
-	
+
 	// convert fft to an array of fft magnitudes,
-	// and scale each magnitude using ft_scaler.
+	// and scale each magnitude using ft_scaler
 	int _hps[ft_len / 2]; //only need to consider first half of fft
 	for (inti=0; i<ft_len/2; i++) {
 		// get magnitude
@@ -62,27 +62,24 @@ int hps(cplx fft[], int num_harmonics) {
 		_hps[i] = mag * scale;
 	}
 
-	// downsample based on number of harmonics
+	// multiply each index in _hps by corresponding index in downsampled
+	// array; repeat for number of harmonics being considered
 	for (int i=2; i<=num_harmonics; i++) {
 		for (int j=0; j<ft_len/2; j++) {
-			if (j<(ft_len/2/)) {
-				_hps[j] *= scale*ft_mag[j*downSample];
-			}
-			else {
-				_hps[j] = 0;
-			}
+			if (j<(ft_len/2 / i)) _hps[j] *= ft_scaler * _hps[j * i];
+
+			else _hps[j] = 0;
 		}
 	}
 
-	// The maximum value is found and returned
-	int maxIdx = 0;
-	for (int i=0; i<divideTwo;i++) {
-		if (_hps[i] > _hps[maxIdx]) {
-			maxIdx = i;
+	// get the index of the max value in _hps - this is the fundamental freq
+	int max = 0;
+	for (int i=0; i<ft_len/2; i++) {
+		if (_hps[i] > _hps[max]) {
+			max = i;
 		}
 	}
-	return maxIdx;
-
+	return max;
 }
 
 
