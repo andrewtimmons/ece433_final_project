@@ -1,19 +1,13 @@
 /*
- * signal_processing.h
+ * signal_processing.c
  *
- *  Created on: Mar 29, 2023
+ *  Created on: Mar 31, 2023
  *      Author: Andrew Timmons
  */
-
-#ifndef INC_SIGNAL_PROCESSING_H_
-#define INC_SIGNAL_PROCESSING_H_
-
+#include "signal_processing.h"
 #include <stdio.h>
-#include <math.h>
-#include <complex.h>
 
-static double PI = atan2(1, 1) * 4;
-typedef double complex cplx;
+const double PI = atan2(1, 1) * 4;
 
 /*
  *
@@ -45,21 +39,18 @@ void fft(cplx buf[], int n) {
  * Harmonic Product Spectrum (HPS) is the chosen pitch detection algorithm.
  * HPS finds the fundamental frequency in the given FT magnitude
  */
-int hps(cplx fft[], int num_harmonics) {
-	// get length of fft array
-	int ft_len = sizeof(fft)/sizeof(fft[0]);
-
+int hps(cplx fft[], int ft_len, int num_harmonics) {
 	// scaler value for downscaling fft values
 	float ft_scaler = 0.001;
 
 	// convert fft to an array of fft magnitudes,
 	// and scale each magnitude using ft_scaler
-	int _hps[ft_len / 2]; //only need to consider first half of fft
-	for (inti=0; i<ft_len/2; i++) {
+	float _hps[ft_len / 2]; //only need to consider first half of fft
+	for (int i=0; i<ft_len/2; i++) {
 		// get magnitude
 		float mag = sqrtf(powf(crealf(fft[i]), 2) + powf(cimagf(fft[i]), 2));
 		// downscale
-		_hps[i] = mag * scale;
+		_hps[i] = mag * ft_scaler;
 	}
 
 	// multiply each index in _hps by corresponding index in downsampled
@@ -81,6 +72,3 @@ int hps(cplx fft[], int num_harmonics) {
 	}
 	return max;
 }
-
-
-#endif /* INC_SIGNAL_PROCESSING_H_ */
