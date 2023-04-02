@@ -63,10 +63,12 @@ extern "C" {
 ////////////////////
 
 void ADC1init(void);
-void setClks(void);
 void delayMs(int ms);
 void GPIOCinit(void);
+void GPIOEinit(void);
 void TIM2init(void);
+void setClks(void);
+void setLEDBar(const float tuning [], int num_strings, float note);
 
 
 ////////////////////

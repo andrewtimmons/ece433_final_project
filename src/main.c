@@ -25,20 +25,29 @@ int main() {
 	// initialize ADC1
 	ADC1init();
 
-	while(1) {
-		// sample audio signal
-		getSample(sample);
+	// initialize GPIOE for LED Bar
+	GPIOEinit();
 
-		// get fundamental frequency
-		fft(sample, NUM_SAMPLES);
-		int max_idx = hps(sample, NUM_SAMPLES, 2);
-		int fund_freq = max_idx * SAMPLE_FREQ / NUM_SAMPLES;
-
-		// get nearest note to calculated freq
-		getNearestNote(GTR_STND, fund_freq);
-
-
+	for (int i=0; i<6; i++) {
+		setLEDBar(GTR_STND, NUM_GTR_STR, GTR_STND[i]);
+		delayMs(1000);
 	}
+
+//	while(1) {
+//		// sample audio signal
+//		getSample(sample);
+//
+//		// get fundamental frequency
+//		fft(sample, NUM_SAMPLES);
+//		int max_idx = hps(sample, NUM_SAMPLES, 2);
+//		int fund_freq = max_idx * SAMPLE_FREQ / NUM_SAMPLES;
+//
+//		// get nearest note to calculated freq
+//		float note = getNearestNote(GTR_STND, fund_freq);
+//
+//		setLEDBar(GTR_STND, note);
+//
+//	}
 
 	return 0;
 }
@@ -194,6 +203,16 @@ void GPIOCinit(void) {
     bitset(GPIOC->MODER, 1);
 }
 
+/*
+ * Initialize GPIOF.
+ */
+void GPIOEinit(void) {
+	//Set APB1ENR2 bit 4 for GPIOE
+	bitset(RCC->AHB2ENR, 4);
+
+	// Set GPIOF MODES 7-12 to digital output (01)
+	GPIOE->MODER = 0x01554000;
+}
 
 /*
  * Sets clocks for initialization.
@@ -214,6 +233,23 @@ void setClks(void) {
 	// Select system clock for ADC (11)
 	bitset(RCC->CCIPR1, 29);
 	bitset(RCC->CCIPR1, 28);
+}
+
+/*
+ *
+ */
+void setLEDBar(const float tuning [], int num_strings, float note) {
+	for (int i=0; i<num_strings; i++) {
+		if (tuning[i] == note) {
+			//set LED
+			bitset(GPIOE->ODR, i+7);
+			//clear all otherLEDs
+			GPIOE->ODR &= 1<<(i+7);
+			return;
+		}
+	}
+	// clear LEDs if note not in tuning
+	GPIOE->ODR &= 0;
 }
 
 /*
