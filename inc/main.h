@@ -38,6 +38,7 @@ extern "C" {
 #include "stm32l5xx_ll_gpio.h"
 #include "stm32l5xx_ll_dma.h"
 #include "stm32l5xx_ll_exti.h"
+#include <complex.h>
 
 
 ////////////////////
@@ -57,6 +58,7 @@ extern "C" {
 #define SAMPLE_FREQ 1000.0	  	//Hz
 #define NUM_SAMPLES 2048
 
+typedef double complex cplx;
 
 ////////////////////
 // Function Headers
@@ -64,6 +66,7 @@ extern "C" {
 
 void ADC1init(void);
 void delayMs(int ms);
+void getSample(cplx buff[]);
 void GPIOCinit(void);
 void GPIOEinit(void);
 void TIM2init(void);

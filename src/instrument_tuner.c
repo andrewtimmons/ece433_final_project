@@ -32,9 +32,9 @@ float getNearestNote(const float tuning [], int num_strings, float freq) {
 		if (i == 0) min_diff = diff;
 		else{
 			if (diff < min_diff) min_diff = diff;
-			else break;
+			else return tuning[i];
 		}
 	}
 
-	return tuning[i];
+	return tuning[i - 1];
 }

@@ -7,8 +7,8 @@
 // Global Variables
 ////////////////////
 
-volatile cplx sample [NUM_SAMPLES];
-volatile uint16_t sample_itr;
+cplx sample [NUM_SAMPLES];
+uint16_t sample_itr;
 
 
 ////////////////////
@@ -28,10 +28,22 @@ int main() {
 	// initialize GPIOE for LED Bar
 	GPIOEinit();
 
-	for (int i=0; i<6; i++) {
-		setLEDBar(GTR_STND, NUM_GTR_STR, GTR_STND[i]);
-		delayMs(1000);
-	}
+	////////////
+	// TESTING
+	////////////
+
+	// sample audio signal
+	getSample(sample);
+
+	// get fundamental frequency
+	fft(sample, NUM_SAMPLES);
+	int max_idx = hps(sample, NUM_SAMPLES, 2);
+	int fund_freq = max_idx * SAMPLE_FREQ / NUM_SAMPLES;
+
+	// get nearest note to calculated freq
+	float note = getNearestNote(GTR_STND, NUM_GTR_STR, fund_freq);
+
+	setLEDBar(GTR_STND, NUM_GTR_STR, note);
 
 //	while(1) {
 //		// sample audio signal
@@ -43,9 +55,9 @@ int main() {
 //		int fund_freq = max_idx * SAMPLE_FREQ / NUM_SAMPLES;
 //
 //		// get nearest note to calculated freq
-//		float note = getNearestNote(GTR_STND, fund_freq);
+//		float note = getNearestNote(GTR_STND, NUM_GTR_STR, fund_freq);
 //
-//		setLEDBar(GTR_STND, note);
+//		setLEDBar(GTR_STND, NUM_GTR_STR, note);
 //
 //	}
 
@@ -68,10 +80,10 @@ void ADC1_2_IRQHandler(){
 	NVIC_DisableIRQ(ADC1_2_IRQn);
 
     // EOC Flag: wait for conversion complete
-    while(bitcheck(ADC1->ISR, 2) == 0){}
+    while(bitcheck(ADC1->ISR, 2) == 0);
 
 	// Read conversion result
-	uint16_t adc_val = ADC1->DR;
+	uint16_t adc_val = ADC1->DR & 0xfff;
 
 	// add sample to sample array
 	sample[sample_itr] = adc_val;
@@ -129,7 +141,7 @@ void ADC1init(void) {
     bitset(ADC1->CFGR, 20);
 
     // Setup NVIC interrupt
-    NVIC_SetPriority(ADC1_2_IRQn, 0);
+    NVIC_SetPriority(ADC1_2_IRQn, 1);
     NVIC_EnableIRQ(ADC1_2_IRQn);
 
     // Enable EOC interrupt
