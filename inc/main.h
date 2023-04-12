@@ -55,7 +55,7 @@ extern "C" {
 // Constants
 ////////////////////
 
-#define SAMPLE_FREQ 1000.0	  	//Hz
+#define SAMPLE_FREQ 10000.0	  	//Hz
 #define NUM_SAMPLES 2048
 
 typedef double complex cplx;
@@ -65,13 +65,26 @@ typedef double complex cplx;
 ////////////////////
 
 void ADC1init(void);
+void blueLEDclear(void);
+void blueLEDinit(void);
+void blueLEDset(void);
+void blueLEDtoggle(void);
+void clearBoardLEDs(void);
 void delayMs(int ms);
 void getSample(cplx buff[]);
 void GPIOCinit(void);
 void GPIOEinit(void);
-void TIM2init(void);
+void greenLEDclear(void);
+void greenLEDinit(void);
+void greenLEDset(void);
+void greenLEDtoggle(void);
+void redLEDset(void);
+void redLEDinit(void);
+void redLEDclear(void);
 void setClks(void);
+void setBoardLEDs(float fund_freq, float note);
 void setLEDBar(const float tuning [], int num_strings, float note);
+void TIM2init(void);
 
 
 ////////////////////
