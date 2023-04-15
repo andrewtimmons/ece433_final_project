@@ -58,7 +58,7 @@ extern "C" {
 #define SAMPLE_FREQ 10000.0	  	//Hz
 #define NUM_SAMPLES 2048
 
-typedef double complex cplx;
+typedef float complex cplx;
 
 ////////////////////
 // Function Headers
@@ -71,13 +71,15 @@ void blueLEDset(void);
 void blueLEDtoggle(void);
 void clearBoardLEDs(void);
 void delayMs(int ms);
-void getSample(cplx buff[]);
+void getSample(void);
+void GPIOAinit(void);
 void GPIOCinit(void);
 void GPIOEinit(void);
 void greenLEDclear(void);
 void greenLEDinit(void);
 void greenLEDset(void);
 void greenLEDtoggle(void);
+void OPAMP1init(void);
 void redLEDset(void);
 void redLEDinit(void);
 void redLEDclear(void);

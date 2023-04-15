@@ -10,11 +10,13 @@
 
 #include <complex.h>
 #include <math.h>
+#include <stdlib.h>
 
-typedef double complex cplx;
+typedef float complex cplx;
 
-void _fft(cplx buf[], cplx out[], int n, int step);
+//cplx* fft(cplx sample[], int n);
 void fft(cplx buf[], int n);
+void _fft(cplx buf[], cplx out[], int n, int step);
 int hps(cplx fft[], int ft_len, int num_harmonics);
 
 

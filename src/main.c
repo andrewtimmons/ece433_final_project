@@ -1,191 +1,138 @@
-/*
- * Author: Andrew Timmons
- * Title: Lab 2 - USART
- * Description: Controls LEDs using serial input from the PC, transmits my name one letter at a time whenever
- * 				the user button is pressed.
- */
-
-/* Include statements */
 #include "stm32l552xx.h"
-#include <stdint.h>
+#include "instrument_tuner.h"
+#include "signal_processing.h"
+#include "main.h"
+#include "stdio.h"
+#include <math.h>
 
-/* Macros */
-#define bitset(word,   idx)  ((word) |=  (1<<(idx)))
-#define bitclear(word, idx)  ((word) &= ~(1<<(idx)))
-#define bitflip(word,  idx)  ((word) ^=  (1<<(idx)))
-#define bitcheck(word, idx)  ((word) &   (1<<(idx)))
+#include "fft_alt.h"
 
-/* Constants */
-char MY_NAME [] = "ANDREW TIMMONS ";
-int CLOCK_FREQ = 16000000;
-int BAUD_RATE = 57600;
+////////////////////
+// Global Variables
+////////////////////
 
-/* Function headers */
-void buttonInit();
-void clearLEDs();
-void delay_ms(uint32_t time);
-void GPIOAinit();
-void GPIOBinit();
-void GPIOCinit();
-void GPIOGinit();
-void LPUART1init();
+cplx sample [NUM_SAMPLES];
+uint16_t sample_itr;
+
+void LPUART1init(void);
 void LPUART1tx(char output_char);
-uint8_t LPUART1rx();
-uint8_t pollButtonInput();
-char pollTypingInput();
-void setClks();
-void toggleBlue();
-void toggleGreen();
-void toggleLED(char input_char);
-void toggleRed();
+void GPIOGinit(void);
+void print(char msg[]);
 
+////////////////////
+// Main Method
+////////////////////
 
 int main() {
-	/* Enable clock */
+	// set clocks
 	setClks();
 
-	/* Configure GPIOs A, B, C, G */
-	GPIOAinit();
-	GPIOBinit();
-	GPIOCinit();
-	GPIOGinit();
+	// initialize timers
+	TIM2init();
 
-	/* Configure user button */
-	buttonInit();
+	// initialize ADC1
+	ADC1init();
 
-	/* Configure LPUART1 */
+	// initialize OPAMP1
+	OPAMP1init();
+
+	// initialize GPIOE for LED Bar
+	GPIOEinit();
+
+	// initialize board LEDs
+	blueLEDinit();
+	greenLEDinit();
+	redLEDinit();
+
 	LPUART1init();
 
-	/* Initialize loop variables */
-	uint8_t res;
-	uint8_t i = 0;
-
-	/* Main loop */
 	while(1) {
-		/* Poll for LPUART rx read data */
-		res = pollTypingInput();
+		// sample audio signal
+		getSample();
 
-		/* Set LEDs if rx data is received */
-		if(res != 0) toggleLED((char)res);
+		// get fundamental frequency
+		fft(sample, NUM_SAMPLES);
+		int max_idx = hps(sample, NUM_SAMPLES, 1);
+		int fund_freq = max_idx * SAMPLE_FREQ / NUM_SAMPLES / 2;
 
-		/* Poll user button input */
-		res = pollButtonInput();
+		// get nearest note to calculated freq
+		float note = getNearestNote(GTR_STND, NUM_GTR_STR, fund_freq);
 
-		/* Transmit char from MY_NAME if button is pressed */
-		if(res != 0) {
-			LPUART1tx(MY_NAME[i++]);
-			/* Reset iterator if stop bit is received */
-			if (MY_NAME[i] == '\0') i = 0;
-		}
+		setLEDBar(GTR_STND, NUM_GTR_STR, note);
+
+		setBoardLEDs(fund_freq, note);
+
+
+		// this is for plotting fft and whatnot
+
+//		float ft_mag [NUM_SAMPLES];
+//		for (int i=0; i<NUM_SAMPLES; i++) {
+//			ft_mag[i] = findMagnitude(sample[i]);
+//		}
+//		ft_mag[0] = 0;
+//
+//		char  txt [10];
+//		for (int i=0; i<NUM_SAMPLES;i++) {
+//			int smp = ft_mag[i];
+//			sprintf(txt, "$%d;", smp);
+//			print(txt);
+//		}
 	}
 
 	return 0;
 }
 
+
+////////////////////
+// Interrupt handlers
+////////////////////
+
 /*
- * Initialize the user button
+ * This interrupt triggers on rising clock edge from
+ * TIM2. When triggered, the temperature sensor is read,
+ * the ADC val is converted to temperature F and the
+ * temperature is transmitted.
  */
-void buttonInit() {
-	/* Set GPIOC MODE13 to input mode (00) */
-	bitclear(GPIOC->MODER, 27);
-	bitclear(GPIOC->MODER, 26);
+void ADC1_2_IRQHandler(){
+    // Disable interrupt to avoid nested calls
+	NVIC_DisableIRQ(ADC1_2_IRQn);
+
+    // EOC Flag: wait for conversion complete
+    while(bitcheck(ADC1->ISR, 2) == 0){}
+
+	// Read conversion result
+	uint16_t adc_val = ADC1->DR & 0xfff;
+
+	// add sample to sample array
+	sample[sample_itr] = adc_val;
+
+	// increment sample_itr
+	sample_itr++;
+
+	// Re-enable interrupt
+	NVIC_EnableIRQ(ADC1_2_IRQn);
 }
 
+////////////////////
+// TESTING FUNCS
+////////////////////
 /*
- * Turn off all LEDs
+ * Initialize LPUART1.
  */
-void clearLEDs() {
-	/* Turn off all LEDs */
-	bitclear(GPIOA->ODR, 9);
-	bitclear(GPIOB->ODR, 7);
-	bitclear(GPIOC->ODR, 7);
-}
+void LPUART1init(void){
+	float BAUD_RATE = 115200;
+	float CLOCK_FREQ = 16000000;
+	GPIOGinit();
 
-/*
- * Cause the microcontroller to delay for the input time (ms).
- *
- * Keyword arguments:
- * 	- ms (uin32_t): time in milliseconds for the system to delay.
- */
-void delay_ms(uint32_t ms) {
+	// Set APB1ENR2 bit 0 for LPUART
+	bitset(RCC->APB1ENR2, 0);
 
-	/* clock freq in ms */
-	uint32_t ms_freq = CLOCK_FREQ / 1000;
+	// Select clock source for LPUART - (10) for hs16
+	bitset(RCC->CCIPR1, 11);
+	bitclear(RCC->CCIPR1, 10);
 
-	/* approx. number of clock cycles per for loop iteration */
-	uint32_t loop_iters = 36;
-
-	/* number of for loop iterations per ms */
-	uint32_t iter_ms = ms_freq / loop_iters;
-
-	/* number of iterations of for loop needed to achieve desired ms delay */
-	uint32_t iterations = ms * iter_ms;
-
-	/* loop iterates for approx ms seconds */
-	for(uint32_t i=0; i<iterations; i++);
-}
-
-/*
- * Initialize GPIOA
- */
-void GPIOAinit() {
-	/* set GPIOA MODE9 to digital output (01) */
-	bitset(GPIOA->MODER, 18);
-	bitclear(GPIOA->MODER, 19);
-}
-
-/*
- * Initialize GPIOB
- */
-void GPIOBinit() {
-	/* set GPIOB MODE7 to digital output (01) */
-	bitset(GPIOB->MODER, 14);
-	bitclear(GPIOB->MODER, 15);
-}
-
-/*
- * Initialize GPIOC
- */
-void GPIOCinit() {
-	/* set GPIOC MODE7 to digital output (01) */
-	bitset(GPIOC->MODER, 14);
-	bitclear(GPIOC->MODER, 15);
-}
-
-/*
- * Initialize GPIOG
- */
-void GPIOGinit() {
-	/* Set power for GPIOG */
-	bitset(PWR->CR2, 9);
-
-	/* Set GPIOG MODE7 to AF (10) */
-	bitset(GPIOG->MODER, 15);
-	bitclear(GPIOG->MODER, 14);
-
-	/* Set GPIOG AFSEL7 to AF8 (1000) for LPUART1_TX */
-	bitset(GPIOG->AFR[0], 31);
-	bitclear(GPIOG->AFR[0], 30);
-	bitclear(GPIOG->AFR[0], 29);
-	bitclear(GPIOG->AFR[0], 28);
-
-	/* set GPIOG MODE8 to AF */
-	bitset(GPIOG->MODER, 17);
-	bitclear(GPIOG->MODER, 16);
-
-	/* Set GPIOG AFSEL0 to AF8 for LPUART1_TX  */
-	bitset(GPIOG->AFR[1], 3);
-	bitclear(GPIOG->AFR[1], 2);
-	bitclear(GPIOG->AFR[1], 1);
-	bitclear(GPIOG->AFR[1], 0);
-}
-
-/*
- * Initialize LPUART1
- */
-void LPUART1init() {
 	// Set Baud rate
-	uint32_t brr = (float) CLOCK_FREQ / (float) BAUD_RATE * 256;
+	uint32_t brr = CLOCK_FREQ / BAUD_RATE * 256;
 	LPUART1->BRR = brr;
 
 	// Set word length to 8
@@ -199,8 +146,8 @@ void LPUART1init() {
 	bitclear(LPUART1->CR2, 13);
 	bitclear(LPUART1->CR2, 12);
 
-	// Enable LPUART, TXn RX
-	LPUART1->CR1 = 0xD;
+	// Enable LPUART, Tx
+	LPUART1->CR1 = 0x9;
 }
 
 /*
@@ -211,158 +158,412 @@ void LPUART1init() {
  *  - output_char (char): output character for transmission.
  */
 void LPUART1tx(char output_char) {
-	/* Write to LPUART TDR to transmit output_char */
-	LPUART1->TDR = output_char;
-
-	/* Delay to prevent multiple writes */
-	delay_ms(250);
+    while (!(LPUART1->ISR & 0x0080)); // wait until Tx buffer empty
+    	LPUART1->TDR = (output_char & 0xFF);
 }
 
 /*
- * Read the input data value on the LPUART1 receive
- * data register and reutnr it.
+ * Transmit the input string via the LPUART.
  *
  * Keyword arguments:
- *  - output_char (char): output character for transmission.
- *
- * Returns:
- *  - ret_val (uint8_t): 8-bit value read from LPUART1 RDR.
+ *  - msg (char []): output string for transmission.
  */
-uint8_t LPUART1rx() {
-	/* Initialize received data and return value variables */
-	uint8_t rx_data, ret_val = 0;
-	/* Check ISR read data reg */
-	while(bitcheck(LPUART1->ISR, 5) != 0) {
-		/* Set return char to rx data until stop bit is encountered */
-		rx_data = LPUART1->RDR;
-		if(rx_data != '\0') ret_val = rx_data;
-	}
-
-	return ret_val;
+void print(char msg[]){
+    uint8_t idx = 0;
+    while(msg[idx]!='\0') LPUART1tx(msg[idx++]);
 }
 
 /*
- * Check GPIOC input data register for input from the
- * user button (bit 13).
- *
- * Returns:
- *  - 1 if button was pushed, 0 otherwise.
+ * Initialize GPIOA.
  */
-uint8_t pollButtonInput() {
-	/* Initialize return character */
-	uint8_t ret_val = 0;
-
-	/* Check GPIOC IDR for button press */
-	if(bitcheck(GPIOC->IDR, 13) != 0) ret_val = 1;
-
-	return ret_val;
-}
-
-/*
- * Check LPUART1 status register to see whether the receive data
- * register has received input data. If data is received, read
- * and return the data has a char.
- *
- * Returns:
- *  - ret_char (char): character read from the RDR register, or 0
- *  				   if no data was read.
- */
-char pollTypingInput() {
-	/* Initialize return character */
-	char ret_char = 0;
-
-	/* Check ISR read data reg */
-	if(bitcheck(LPUART1->ISR, 5) != 0) ret_char = (char)LPUART1rx();
-
-	return ret_char;
-}
-
-/*
- * Enable and configure system clocks for all relevant IP blocks.
- */
-void setClks() {
-    //Set APB1ENR1 bit 28 for PWR
-	bitset(RCC->APB1ENR1, 28);
-
-	//Set APB1ENR2 bit 0 for GPIOA
+void GPIOAinit(void) {
+	// Set APB1ENR2 bit 0 for GPIOA
 	bitset(RCC->AHB2ENR, 0);
 
-	//Set APB1ENR2 bit 1 for GPIOB
-	bitset(RCC->AHB2ENR, 1);
-
-	//Set APB1ENR2 bit 2 for GPIOC
-	bitset(RCC->AHB2ENR, 2);
-
-	//Set APB1ENR2 bit 6 for GPIOG
-	bitset(RCC->AHB2ENR, 6);
-
-	//Set APB1ENR2 bit 0 for LPUART
-	bitset(RCC->APB1ENR2, 0);
-
-	//Select clock source for LPUART (10) for hs16
-	bitset(RCC->CCIPR1, 11);
-	bitclear(RCC->CCIPR1, 10);
-
-	// enable hs16 clk
-	bitset(RCC->CR, 8);
+	// Set MODE0 to analog (11)
+	bitset(GPIOA->MODER, 1);
+	bitset(GPIOA->MODER, 0);
 }
 
 /*
- * Toggle the blue LED on or off depending on its current state.
+ * Initialize GPIOG.
  */
-void toggleBlue(void) {
-	/* toggle ODR bit 7 */
+void GPIOGinit(void) {
+	// Set APB1ENR2 bit 6 for GPIOG
+	bitset(RCC->AHB2ENR, 6);
+
+	// Set power for GPIOG
+	bitset(PWR->CR2, 9);
+
+	// Set GPIOG MODE7 to AF (10)
+	bitset(GPIOG->MODER, 15);
+	bitclear(GPIOG->MODER, 14);
+
+	// Set GPIOG AFSEL7 to AF8 (1000) for LPUART1_TX
+	bitset(GPIOG->AFR[0], 31);
+	bitclear(GPIOG->AFR[0], 30);
+	bitclear(GPIOG->AFR[0], 29);
+	bitclear(GPIOG->AFR[0], 28);
+
+	// Set GPIOG MODE8 to AF
+	bitset(GPIOG->MODER, 17);
+	bitclear(GPIOG->MODER, 16);
+
+	// Set GPIOG AFSEL0 to AF8 for LPUART1_TX
+	bitset(GPIOG->AFR[1], 3);
+	bitclear(GPIOG->AFR[1], 2);
+	bitclear(GPIOG->AFR[1], 1);
+	bitclear(GPIOG->AFR[1], 0);
+}
+
+////////////////////
+// Helper functions
+////////////////////
+
+/*
+ * Initializes the ADC normal and injected modes, as well
+ * as the ADC interrupt.
+ */
+void ADC1init(void) {
+	// Enable GPIOC for PC0 analog input
+	GPIOCinit();
+
+	// Enable ADC voltage regulator
+	bitclear(ADC1->CR, 29); // ADC not in Deep-power down
+    bitset(ADC1->CR, 28); // enable voltage regulator
+
+    // Wait for the voltage regulator to stabilize
+    delayMs(10);
+
+    // External trigger enable and polarity - rising edge (01)
+    bitclear(ADC1->CFGR, 11);
+    bitset(ADC1->CFGR, 10);
+
+    // External trigger connected to TIM2_CH2 (0011)
+    bitclear(ADC1->CFGR, 9);
+    bitclear(ADC1->CFGR, 8);
+    bitset(ADC1->CFGR, 7);
+    bitset(ADC1->CFGR, 6);
+
+    // Set L=0
+    bitclear(ADC1->SQR1, 3);
+    bitclear(ADC1->SQR1, 2);
+    bitclear(ADC1->SQR1, 1);
+    bitclear(ADC1->SQR1, 0);
+
+//    // Set SQ1=IN0s
+//    ADC1->SQR1 = (1<<6)|(0);
+
+    // Set SQ1=IN8 for opamp
+    ADC1->SQR1 = (8<<6)|(0);
+
+    // Disable overrun mode
+    bitset(ADC1->CFGR, 12);
+
+    // Setup NVIC interrupt
+    NVIC_SetPriority(ADC1_2_IRQn, 1);
+    NVIC_EnableIRQ(ADC1_2_IRQn);
+
+    // Enable EOC interrupt
+    bitset(ADC1->IER, 2);
+
+    // Enable ADC1
+    bitset(ADC1->CR, 0);
+
+    // Wait until ADC is Ready (ADRDY)
+    while(bitcheck(ADC1->ISR, 0)==0);
+}
+
+/*
+ *
+ */
+void blueLEDclear(void) {
+	bitclear(GPIOB->ODR, 7);
+}
+
+/*
+ *
+ */
+void blueLEDinit(void) {
+	// set APB1ENR2 bit 1 for GPIOB
+	bitset(RCC->AHB2ENR, 1);
+
+	// set GPIOB MODE7 to digital output
+	bitclear(GPIOB->MODER, 15);
+	bitset(GPIOB->MODER, 14);
+}
+
+/*
+ *
+ */
+void blueLEDset(void){
+	bitset(GPIOB->ODR, 7);
+}
+
+/*
+ *
+ */
+void blueLEDtoggle(void){
 	bitflip(GPIOB->ODR, 7);
 }
 
 /*
- * Toggle the green LED on or off depending on its current state.
+ *
  */
-void toggleGreen(void) {
-	/* toggle ODR bit 7 */
+void clearBoardLEDs(void){
+	blueLEDclear();
+	greenLEDclear();
+	redLEDclear();
+}
+
+/*
+ * Uses the SysTick timer to delay for a number
+ * of ms specified by the ms kwarg.
+ *
+ * Keyword arguments:
+ *  - ms (int): number of ms to delay.
+ */
+void delayMs(int ms) {
+    // reload with number of clocks / ms
+    SysTick->LOAD = 16000;
+
+    // clear current value
+    SysTick->VAL = 0;
+
+    // enable timer
+    SysTick->CTRL = 0x5;
+
+    // delay 1 ms for the specified number of times
+    for(int i=0; i<ms; i++) {
+        while((SysTick->CTRL & 0x10000) == 0);
+    }
+
+    // disable timer
+    SysTick->CTRL = 0;
+}
+
+void getSample(void) {
+    // reset sample iterator
+    sample_itr = 0;
+
+    // set TIM2 count to 0
+    TIM2->CNT = 0;
+
+	// start ADC conversion
+    bitset(ADC1->CR, 2);
+
+    // enable TIM2
+    TIM2->CR1 = 1;
+
+    // stall while samples are collected
+    while(sample_itr < NUM_SAMPLES);
+
+    // disable TIM2
+    TIM2->CR1 = 0;
+
+    // stop ADC conversion
+    bitclear(ADC1->CR, 2);
+}
+
+/*
+ * Initialize GPIOC for the ADC and button.
+ */
+void GPIOCinit(void) {
+	// Set AHB2ENR bit 2 for GPIOC
+	bitset(RCC->AHB2ENR, 2);
+
+	// Set PC0 to analog input (11) for ADC1
+    bitset(GPIOC->MODER, 0);
+    bitset(GPIOC->MODER, 1);
+}
+
+/*
+ * Initialize GPIOF.
+ */
+void GPIOEinit(void) {
+	//Set APB1ENR2 bit 4 for GPIOE
+	bitset(RCC->AHB2ENR, 4);
+
+	// Set GPIOF MODES 7-12 to digital output (01)
+	GPIOE->MODER = 0x01554000;
+}
+
+/*
+ *
+ */
+void greenLEDclear(void) {
+	bitclear(GPIOC->ODR, 7);
+}
+
+/*
+ *
+ */
+void greenLEDinit(void) {
+	// set APB1ENR2 bit 2 for GPIOC
+	bitset(RCC->AHB2ENR, 2);
+
+	// set GPIOC MODE7 to digital output
+	bitclear(GPIOC->MODER, 15);
+	bitset(GPIOC->MODER, 14);
+}
+
+/*
+ *
+ */
+void greenLEDset(void) {
+	bitset(GPIOC->ODR, 7);
+}
+
+/*
+ *
+ */
+void greenLEDtoggle(void) {
 	bitflip(GPIOC->ODR, 7);
 }
 
 /*
- * Toggle LED based on the input character. Input character can be
- * 	- 'r' or 'R': toggle red LED,
- * 	- 'g' or 'G': toggle green LED,
- * 	- 'b' or 'B': toggle blue LED.
- * Any other input character will turn all LEDs off.
  *
- * Keyword arguments:
- *  - input_char (char): character specifying which LED to toggle.
  */
-void toggleLED(char input_char) {
-	switch(input_char) {
-		/* Toggle green LED if input_char is 'g' or 'G' */
-		case 'g':
-		case 'G':
-			toggleGreen();
-			break;
+void OPAMP1init(void) {
+	// init GPIOA pin 0
+	GPIOAinit();
 
-		/* Toggle blue LED if input_char is 'b' or 'B' */
-		case 'b':
-		case 'B':
-			toggleBlue();
-			break;
+	// set clock
+	bitset(RCC->APB1ENR1, 30);
 
-		/* Toggle red LED if input_char is 'r' or 'R' */
-		case 'r':
-		case 'R':
-			toggleRed();
-			break;
+	// internal PGA enable (10)
+	bitset(OPAMP1->CSR, 3);
+	bitclear(OPAMP1->CSR, 2);
 
-		/* Turn off LEDs for any other input character */
-		default:
-			clearLEDs();
-	}
+	// set PGA gain to 2 (00)
+	bitclear(OPAMP1->CSR, 5);
+	bitclear(OPAMP1->CSR, 4);
+
+	// select GPIO input (0)
+	bitclear(OPAMP1->CSR, 10);
+
+	// enable OPAMP
+	bitset(OPAMP1->CSR, 0);
+}
+
+
+/*
+ *
+ */
+void redLEDclear(void){
+	bitclear(GPIOA->ODR, 9);
 }
 
 /*
- * Toggle the red LED on or off depending on its current state.
+ *
  */
-void toggleRed(void) {
-	/* toggle ODR bit 9 */
-	bitflip(GPIOA->ODR, 9);
+void redLEDinit(void) {
+	//Set APB1ENR2 bit 0 for GPIOA
+	bitset(RCC->AHB2ENR, 0);
+
+	// set GPIOA MODE9 to digital output
+	bitclear(GPIOA->MODER, 19);
+	bitset(GPIOA->MODER, 18);
+}
+
+/*
+ *
+ */
+void redLEDset(void){
+	bitset(GPIOA->ODR, 9);
+}
+
+/*
+ * Sets clocks for initialization.
+ */
+void setClks(void) {
+	// set voltage scaling range selection to 0 for 48M clock
+	bitclear(PWR->CR1, 10);
+	bitclear(PWR->CR1, 9);
+
+	// delay
+	delayMs(1000);
+
+    // Set APB1ENR1 bit 28 for PWR
+	bitset(RCC->APB1ENR1, 28);
+
+	// Use HSI16 as SYSCLK
+	bitset(RCC->CFGR, 0);
+
+	// Enable hs16 clk
+	bitset(RCC->CR, 8);
+
+    // Set ADC clock
+	bitset(RCC->AHB2ENR, 13);
+
+	// Select system clock for ADC (11)
+	bitset(RCC->CCIPR1, 29);
+	bitset(RCC->CCIPR1, 28);
+}
+
+/*
+ *
+ */
+void setBoardLEDs(float fund_freq, float note) {
+	// difference between target note and calculated freq
+	int diff = fund_freq - note;
+
+	// clear current board LEDs
+	clearBoardLEDs();
+
+	// if diff is within tolerance (hard coding 5 for now)
+	if (abs(diff) < 5) redLEDset();
+
+	// no LEDs if too out of range
+	else if (abs(diff) > 300) return;
+
+	else if (diff < 0) greenLEDset();
+
+	else blueLEDset();
+}
+
+/*
+ *
+ */
+void setLEDBar(const float tuning [], int num_strings, float note) {
+	for (int i=0; i<num_strings; i++) {
+		if (tuning[i] == note) {
+			//set LED
+			bitset(GPIOE->ODR, i+7);
+			//clear all otherLEDs
+			GPIOE->ODR &= 1<<(i+7);
+			return;
+		}
+	}
+	// clear LEDs if note not in tuning
+	GPIOE->ODR &= 0;
+}
+
+/*
+ *
+ */
+void TIM2init(void) {
+	// Enable TIM2 clock
+	bitset(RCC->APB1ENR1, 0);
+
+	// Set 1us tick
+	TIM2->PSC = 16 - 1;
+
+	// Set timer for sample rate
+	TIM2->ARR = (1 / SAMPLE_FREQ * 1000000) - 1;
+
+	// Set output compare mode to toggle (0011)
+	bitclear(TIM2->CCMR1, 24);
+	bitclear(TIM2->CCMR1, 14);
+	bitset(TIM2->CCMR1, 13);
+	bitset(TIM2->CCMR1, 12);
+
+	// Set capture/compare value
+	TIM2->CCR1 = 1;
+
+	// Enable CH2 compare mode
+	bitset(TIM2->CCER, 4);
+
+	// Clear counter
+	TIM2->CNT = 0;
 }
