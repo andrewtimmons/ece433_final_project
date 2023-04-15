@@ -5,7 +5,6 @@
 #include "stdio.h"
 #include <math.h>
 
-#include "fft_alt.h"
 
 ////////////////////
 // Global Variables
@@ -14,10 +13,6 @@
 cplx sample [NUM_SAMPLES];
 uint16_t sample_itr;
 
-void LPUART1init(void);
-void LPUART1tx(char output_char);
-void GPIOGinit(void);
-void print(char msg[]);
 
 ////////////////////
 // Main Method
@@ -44,8 +39,6 @@ int main() {
 	greenLEDinit();
 	redLEDinit();
 
-	LPUART1init();
-
 	while(1) {
 		// sample audio signal
 		getSample();
@@ -61,22 +54,6 @@ int main() {
 		setLEDBar(GTR_STND, NUM_GTR_STR, note);
 
 		setBoardLEDs(fund_freq, note);
-
-
-		// this is for plotting fft and whatnot
-
-//		float ft_mag [NUM_SAMPLES];
-//		for (int i=0; i<NUM_SAMPLES; i++) {
-//			ft_mag[i] = findMagnitude(sample[i]);
-//		}
-//		ft_mag[0] = 0;
-//
-//		char  txt [10];
-//		for (int i=0; i<NUM_SAMPLES;i++) {
-//			int smp = ft_mag[i];
-//			sprintf(txt, "$%d;", smp);
-//			print(txt);
-//		}
 	}
 
 	return 0;
@@ -89,9 +66,9 @@ int main() {
 
 /*
  * This interrupt triggers on rising clock edge from
- * TIM2. When triggered, the temperature sensor is read,
- * the ADC val is converted to temperature F and the
- * temperature is transmitted.
+ * TIM2. When triggered, the audio sensor input is read
+ * by the ADC and stores it in the next position in the
+ * sample buffer.
  */
 void ADC1_2_IRQHandler(){
     // Disable interrupt to avoid nested calls
@@ -113,108 +90,6 @@ void ADC1_2_IRQHandler(){
 	NVIC_EnableIRQ(ADC1_2_IRQn);
 }
 
-////////////////////
-// TESTING FUNCS
-////////////////////
-/*
- * Initialize LPUART1.
- */
-void LPUART1init(void){
-	float BAUD_RATE = 115200;
-	float CLOCK_FREQ = 16000000;
-	GPIOGinit();
-
-	// Set APB1ENR2 bit 0 for LPUART
-	bitset(RCC->APB1ENR2, 0);
-
-	// Select clock source for LPUART - (10) for hs16
-	bitset(RCC->CCIPR1, 11);
-	bitclear(RCC->CCIPR1, 10);
-
-	// Set Baud rate
-	uint32_t brr = CLOCK_FREQ / BAUD_RATE * 256;
-	LPUART1->BRR = brr;
-
-	// Set word length to 8
-	bitclear(LPUART1->CR1, 28);
-	bitclear(LPUART1->CR1, 12);
-
-	// Disable parity
-	bitclear(LPUART1->CR1, 10);
-
-	// Set stop bits to 1
-	bitclear(LPUART1->CR2, 13);
-	bitclear(LPUART1->CR2, 12);
-
-	// Enable LPUART, Tx
-	LPUART1->CR1 = 0x9;
-}
-
-/*
- * Write the output char to the LPUART1 transmit
- * data register for transmission.
- *
- * Keyword arguments:
- *  - output_char (char): output character for transmission.
- */
-void LPUART1tx(char output_char) {
-    while (!(LPUART1->ISR & 0x0080)); // wait until Tx buffer empty
-    	LPUART1->TDR = (output_char & 0xFF);
-}
-
-/*
- * Transmit the input string via the LPUART.
- *
- * Keyword arguments:
- *  - msg (char []): output string for transmission.
- */
-void print(char msg[]){
-    uint8_t idx = 0;
-    while(msg[idx]!='\0') LPUART1tx(msg[idx++]);
-}
-
-/*
- * Initialize GPIOA.
- */
-void GPIOAinit(void) {
-	// Set APB1ENR2 bit 0 for GPIOA
-	bitset(RCC->AHB2ENR, 0);
-
-	// Set MODE0 to analog (11)
-	bitset(GPIOA->MODER, 1);
-	bitset(GPIOA->MODER, 0);
-}
-
-/*
- * Initialize GPIOG.
- */
-void GPIOGinit(void) {
-	// Set APB1ENR2 bit 6 for GPIOG
-	bitset(RCC->AHB2ENR, 6);
-
-	// Set power for GPIOG
-	bitset(PWR->CR2, 9);
-
-	// Set GPIOG MODE7 to AF (10)
-	bitset(GPIOG->MODER, 15);
-	bitclear(GPIOG->MODER, 14);
-
-	// Set GPIOG AFSEL7 to AF8 (1000) for LPUART1_TX
-	bitset(GPIOG->AFR[0], 31);
-	bitclear(GPIOG->AFR[0], 30);
-	bitclear(GPIOG->AFR[0], 29);
-	bitclear(GPIOG->AFR[0], 28);
-
-	// Set GPIOG MODE8 to AF
-	bitset(GPIOG->MODER, 17);
-	bitclear(GPIOG->MODER, 16);
-
-	// Set GPIOG AFSEL0 to AF8 for LPUART1_TX
-	bitset(GPIOG->AFR[1], 3);
-	bitclear(GPIOG->AFR[1], 2);
-	bitclear(GPIOG->AFR[1], 1);
-	bitclear(GPIOG->AFR[1], 0);
-}
 
 ////////////////////
 // Helper functions
@@ -251,9 +126,6 @@ void ADC1init(void) {
     bitclear(ADC1->SQR1, 1);
     bitclear(ADC1->SQR1, 0);
 
-//    // Set SQ1=IN0s
-//    ADC1->SQR1 = (1<<6)|(0);
-
     // Set SQ1=IN8 for opamp
     ADC1->SQR1 = (8<<6)|(0);
 
@@ -275,14 +147,14 @@ void ADC1init(void) {
 }
 
 /*
- *
+ * Turns off the blue on-board LED.
  */
 void blueLEDclear(void) {
 	bitclear(GPIOB->ODR, 7);
 }
 
 /*
- *
+ * Initializes the blue on-board LED.
  */
 void blueLEDinit(void) {
 	// set APB1ENR2 bit 1 for GPIOB
@@ -294,21 +166,21 @@ void blueLEDinit(void) {
 }
 
 /*
- *
+ * Turns on the blue on-board LED.
  */
 void blueLEDset(void){
 	bitset(GPIOB->ODR, 7);
 }
 
-/*
- *
- */
-void blueLEDtoggle(void){
-	bitflip(GPIOB->ODR, 7);
-}
+///*
+// *
+// */
+//void blueLEDtoggle(void){
+//	bitflip(GPIOB->ODR, 7);
+//}
 
 /*
- *
+ * Turns off all on-board LEDs.
  */
 void clearBoardLEDs(void){
 	blueLEDclear();
@@ -342,6 +214,14 @@ void delayMs(int ms) {
     SysTick->CTRL = 0;
 }
 
+/*
+ * Resets the sample buffer iterator, begins ADC
+ * conversion, and enables TIM2. ADC1 interrupt is
+ * triggered by TIM2, causing the microphone input
+ * to be read and stored in the next sample buffer
+ * position. This repeats until every position in
+ * the sample buffer is filled.
+ */
 void getSample(void) {
     // reset sample iterator
     sample_itr = 0;
@@ -369,10 +249,10 @@ void getSample(void) {
  * Initialize GPIOC for the ADC and button.
  */
 void GPIOCinit(void) {
-	// Set AHB2ENR bit 2 for GPIOC
+	// set AHB2ENR bit 2 for GPIOC
 	bitset(RCC->AHB2ENR, 2);
 
-	// Set PC0 to analog input (11) for ADC1
+	// set PC0 to analog input (11) for ADC1
     bitset(GPIOC->MODER, 0);
     bitset(GPIOC->MODER, 1);
 }
@@ -381,22 +261,22 @@ void GPIOCinit(void) {
  * Initialize GPIOF.
  */
 void GPIOEinit(void) {
-	//Set APB1ENR2 bit 4 for GPIOE
+	// set APB1ENR2 bit 4 for GPIOE
 	bitset(RCC->AHB2ENR, 4);
 
-	// Set GPIOF MODES 7-12 to digital output (01)
+	// set GPIOF MODES 7-12 to digital output (01)
 	GPIOE->MODER = 0x01554000;
 }
 
 /*
- *
+ * Turns off the green on-board LED.
  */
 void greenLEDclear(void) {
 	bitclear(GPIOC->ODR, 7);
 }
 
 /*
- *
+ * Initializes the green on-board LED.
  */
 void greenLEDinit(void) {
 	// set APB1ENR2 bit 2 for GPIOC
@@ -408,21 +288,22 @@ void greenLEDinit(void) {
 }
 
 /*
- *
+ * Turns on the green on-board LED.
  */
 void greenLEDset(void) {
 	bitset(GPIOC->ODR, 7);
 }
 
-/*
- *
- */
-void greenLEDtoggle(void) {
-	bitflip(GPIOC->ODR, 7);
-}
+///*
+// *
+// */
+//void greenLEDtoggle(void) {
+//	bitflip(GPIOC->ODR, 7);
+//}
 
 /*
- *
+ * Initializes the OPAMP with a PGA
+ * gain of 2x.
  */
 void OPAMP1init(void) {
 	// init GPIOA pin 0
@@ -448,14 +329,14 @@ void OPAMP1init(void) {
 
 
 /*
- *
+ * Turns off the red on-board LED.
  */
 void redLEDclear(void){
 	bitclear(GPIOA->ODR, 9);
 }
 
 /*
- *
+ * Initializes the red on-board LED.
  */
 void redLEDinit(void) {
 	//Set APB1ENR2 bit 0 for GPIOA
@@ -467,7 +348,7 @@ void redLEDinit(void) {
 }
 
 /*
- *
+ * Turn on the red on-board LED.
  */
 void redLEDset(void){
 	bitset(GPIOA->ODR, 9);
@@ -477,21 +358,17 @@ void redLEDset(void){
  * Sets clocks for initialization.
  */
 void setClks(void) {
-	// set voltage scaling range selection to 0 for 48M clock
-	bitclear(PWR->CR1, 10);
-	bitclear(PWR->CR1, 9);
-
-	// delay
-	delayMs(1000);
+	// set sys clock to 110 MHz
+	SystemClock_Config();
 
     // Set APB1ENR1 bit 28 for PWR
 	bitset(RCC->APB1ENR1, 28);
 
-	// Use HSI16 as SYSCLK
-	bitset(RCC->CFGR, 0);
+//	// Use HSI16 as SYSCLK
+//	bitset(RCC->CFGR, 0);
 
-	// Enable hs16 clk
-	bitset(RCC->CR, 8);
+//	// Enable hs16 clk
+//	bitset(RCC->CR, 8);
 
     // Set ADC clock
 	bitset(RCC->AHB2ENR, 13);
@@ -502,7 +379,16 @@ void setClks(void) {
 }
 
 /*
+ * Sets on-board LEDs based on difference between
+ * the calculated fundamental frequency and the
+ * target note.
+ * 	- Red   = notes match within tolerance
+ * 	- Green = note is below target
+ * 	- Blue  = note is above target
  *
+ * Keyword arguments:
+ *  - fund_freq (float): calculated frequency.
+ *  - note (float): target note frequency.
  */
 void setBoardLEDs(float fund_freq, float note) {
 	// difference between target note and calculated freq
@@ -512,18 +398,26 @@ void setBoardLEDs(float fund_freq, float note) {
 	clearBoardLEDs();
 
 	// if diff is within tolerance (hard coding 5 for now)
-	if (abs(diff) < 5) redLEDset();
+	if (abs(diff) < FREQ_TOLERANCE) redLEDset();
 
 	// no LEDs if too out of range
 	else if (abs(diff) > 300) return;
 
+	// green if too low
 	else if (diff < 0) greenLEDset();
 
+	// blue if too high
 	else blueLEDset();
 }
 
 /*
+ * Set the LED bar to indicate the string that is being tuned.
  *
+ * Keyword arguments:
+ *  - tuning (const float []): array of frequencies (descending order),
+ *  						   one for each string.
+ *  - num_strings (int): number of strings in tuning.
+ *  - note (float): note in tuning that is being tuned.
  */
 void setLEDBar(const float tuning [], int num_strings, float note) {
 	for (int i=0; i<num_strings; i++) {
@@ -540,6 +434,7 @@ void setLEDBar(const float tuning [], int num_strings, float note) {
 }
 
 /*
+ * Initializes TIM2 for controlling the sampling rate of ADC1.
  *
  */
 void TIM2init(void) {
@@ -547,7 +442,7 @@ void TIM2init(void) {
 	bitset(RCC->APB1ENR1, 0);
 
 	// Set 1us tick
-	TIM2->PSC = 16 - 1;
+	TIM2->PSC = (CLK_FREQ / 1000000) - 1;
 
 	// Set timer for sample rate
 	TIM2->ARR = (1 / SAMPLE_FREQ * 1000000) - 1;
@@ -566,4 +461,72 @@ void TIM2init(void) {
 
 	// Clear counter
 	TIM2->CNT = 0;
+}
+
+////////////////////
+// Auto-generated Functions
+////////////////////
+
+
+/*
+ * Auto-generated clock setting function for setting
+ * the clock freq to max (110 MHz).
+ */
+void SystemClock_Config(void) {
+  HAL_Init();
+
+  RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+  RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+
+  /** Configure the main internal regulator output voltage
+  */
+  if (HAL_PWREx_ControlVoltageScaling(PWR_REGULATOR_VOLTAGE_SCALE0) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure LSE Drive Capability
+  */
+  HAL_PWR_EnableBkUpAccess();
+  __HAL_RCC_LSEDRIVE_CONFIG(RCC_LSEDRIVE_LOW);
+
+  /** Initializes the RCC Oscillators according to the specified parameters
+  * in the RCC_OscInitTypeDef structure.
+  */
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI48|RCC_OSCILLATORTYPE_LSE
+                              |RCC_OSCILLATORTYPE_MSI;
+  RCC_OscInitStruct.LSEState = RCC_LSE_ON;
+  RCC_OscInitStruct.HSI48State = RCC_HSI48_ON;
+  RCC_OscInitStruct.MSIState = RCC_MSI_ON;
+  RCC_OscInitStruct.MSICalibrationValue = RCC_MSICALIBRATION_DEFAULT;
+  RCC_OscInitStruct.MSIClockRange = RCC_MSIRANGE_6;
+  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_MSI;
+  RCC_OscInitStruct.PLL.PLLM = 1;
+  RCC_OscInitStruct.PLL.PLLN = 55;
+  RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV7;
+  RCC_OscInitStruct.PLL.PLLQ = RCC_PLLQ_DIV2;
+  RCC_OscInitStruct.PLL.PLLR = RCC_PLLR_DIV2;
+  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Initializes the CPU, AHB and APB buses clocks
+  */
+  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
+                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
+  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+  RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
+  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
+
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_5) != HAL_OK)
+  {
+    Error_Handler();
+  }
+}
+
+void Error_Handler(void) {
+	while(1);
 }
