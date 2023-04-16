@@ -55,8 +55,10 @@ extern "C" {
 // Constants
 ////////////////////
 
-#define SAMPLE_FREQ 10000.0	  	//Hz
-#define NUM_SAMPLES 2048
+#define CLK_FREQ 110000000		//Hz
+#define FREQ_TOLERANCE 1		//Hz
+#define SAMPLE_FREQ 2000.0	  	//Hz
+#define NUM_SAMPLES 1024
 
 typedef float complex cplx;
 
@@ -88,13 +90,6 @@ void setBoardLEDs(float fund_freq, float note);
 void setLEDBar(const float tuning [], int num_strings, float note);
 void TIM2init(void);
 
-
-////////////////////
-// Constants
-////////////////////
-
-
-void Error_Handler(void);
 
 /* Private defines -----------------------------------------------------------*/
 #define USER_BUTTON_Pin GPIO_PIN_13
