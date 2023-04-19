@@ -56,8 +56,8 @@ extern "C" {
 ////////////////////
 
 #define CLK_FREQ 110000000		//Hz
-#define FREQ_TOLERANCE 1		//Hz
-#define SAMPLE_FREQ 2000.0	  	//Hz
+#define FREQ_TOLERANCE 2		//Hz
+#define SAMPLE_FREQ 4000.0	  	//Hz
 #define NUM_SAMPLES 1024
 
 typedef float complex cplx;
@@ -89,6 +89,10 @@ void setClks(void);
 void setBoardLEDs(float fund_freq, float note);
 void setLEDBar(const float tuning [], int num_strings, float note);
 void TIM2init(void);
+
+
+void SystemClock_Config(void);
+void Error_Handler(void);
 
 
 /* Private defines -----------------------------------------------------------*/

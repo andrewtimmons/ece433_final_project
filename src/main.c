@@ -45,7 +45,8 @@ int main() {
 
 		// get fundamental frequency
 		fft(sample, NUM_SAMPLES);
-		int max_idx = hps(sample, NUM_SAMPLES, 1);
+
+		int max_idx = hps(sample, NUM_SAMPLES, 2);
 		int fund_freq = max_idx * SAMPLE_FREQ / NUM_SAMPLES / 2;
 
 		// get nearest note to calculated freq
@@ -58,7 +59,6 @@ int main() {
 
 	return 0;
 }
-
 
 ////////////////////
 // Interrupt handlers
@@ -243,6 +243,19 @@ void getSample(void) {
 
     // stop ADC conversion
     bitclear(ADC1->CR, 2);
+}
+
+
+/*
+ * Initialize GPIOA.
+ */
+void GPIOAinit(void) {
+	// Set APB1ENR2 bit 0 for GPIOA
+	bitset(RCC->AHB2ENR, 0);
+
+	// Set MODE0 to analog (11)
+	bitset(GPIOA->MODER, 1);
+	bitset(GPIOA->MODER, 0);
 }
 
 /*
