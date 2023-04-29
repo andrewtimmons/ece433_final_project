@@ -1,8 +1,7 @@
 /*
- * signal_processing.c
- *
- *  Created on: Mar 31, 2023
- *      Author: Andrew Timmons
+ * Author: Andrew Timmons
+ * Description: Signal processing source file; contains all signal
+ * 				processing related algorithms.
  */
 #include "signal_processing.h"
 

@@ -56,7 +56,7 @@ extern "C" {
 ////////////////////
 
 #define CLK_FREQ 110000000		//Hz
-#define FREQ_TOLERANCE 2		//Hz
+#define FREQ_TOLERANCE 1		//Hz
 #define SAMPLE_FREQ 4000.0	  	//Hz
 #define NUM_SAMPLES 1024
 

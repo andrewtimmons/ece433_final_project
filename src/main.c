@@ -1,3 +1,8 @@
+/*
+ * Author: Andrew Timmons
+ * Description: Main source file for the Instrument Tuner project.
+ */
+
 #include "stm32l552xx.h"
 #include "instrument_tuner.h"
 #include "signal_processing.h"
@@ -376,12 +381,6 @@ void setClks(void) {
 
     // Set APB1ENR1 bit 28 for PWR
 	bitset(RCC->APB1ENR1, 28);
-
-//	// Use HSI16 as SYSCLK
-//	bitset(RCC->CFGR, 0);
-
-//	// Enable hs16 clk
-//	bitset(RCC->CR, 8);
 
     // Set ADC clock
 	bitset(RCC->AHB2ENR, 13);

@@ -1,8 +1,7 @@
 /*
- * instrument_tuner.c
- *
- *  Created on: Mar 31, 2023
- *      Author: Andrew Timmons
+ * Author: Andrew Timmons
+ * Description: Instrument tuner source file; defines tunings, number of strings,
+ * 				and supporting methods.
  */
 
 
