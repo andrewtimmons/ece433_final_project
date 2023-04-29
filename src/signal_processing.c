@@ -26,7 +26,8 @@ void _fft(cplx buf[], cplx out[], int n, int step)
 
 /*
  * Fast Fourier Transform function. Takes the sample buffer
- * and performs the FT in-place.
+ * and performs the FT in-place. This algorithm was found here:
+ * https://rosettacode.org/wiki/Fast_Fourier_transform
  *
  * Keyword arguments:
  *  - buf (float complex []): array of complex sample points.
